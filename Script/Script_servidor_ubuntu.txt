@@ -1,0 +1,339 @@
+#!/bin/bash
+
+# ============================================================
+# LABORATORIO: VPN IPsec FortiGate
+# Servidor: Ubuntu Server 24.04
+# Interfaz: ens3
+# IP: 10.21.40.130/28
+# Gateway: 10.21.40.129
+# Servicios:
+#   - SSH  TCP/22
+#   - HTTPS TCP/443
+# ============================================================
+
+set -e
+
+# ------------------------------------------------------------
+# 1. Verificar ejecución como root
+# ------------------------------------------------------------
+
+if [ "$EUID" -ne 0 ]; then
+    echo "Ejecute este script como root:"
+    echo "sudo bash $0"
+    exit 1
+fi
+
+echo "=============================================="
+echo " Configuración Ubuntu Server - FortiGate Lab"
+echo "=============================================="
+
+# ------------------------------------------------------------
+# 2. Variables
+# ------------------------------------------------------------
+
+INTERFAZ="ens3"
+IP_SERVIDOR="10.21.40.130"
+PREFIJO="28"
+GATEWAY="10.21.40.129"
+
+DNS1="8.8.8.8"
+DNS2="1.1.1.1"
+
+USUARIO_SSH="carlos2140"
+
+NETPLAN_FILE="/etc/netplan/01-fortigate-lab.yaml"
+
+# ------------------------------------------------------------
+# 3. Respaldo de Netplan
+# ------------------------------------------------------------
+
+echo "[+] Respaldando configuración de red..."
+
+mkdir -p /root/netplan-backup
+
+cp -a /etc/netplan/* /root/netplan-backup/ 2>/dev/null || true
+
+# ------------------------------------------------------------
+# 4. Configurar IP estática
+# ------------------------------------------------------------
+
+echo "[+] Configurando $INTERFAZ..."
+
+cat > "$NETPLAN_FILE" <<EOF
+network:
+  version: 2
+  ethernets:
+    ${INTERFAZ}:
+      dhcp4: false
+      addresses:
+        - ${IP_SERVIDOR}/${PREFIJO}
+      routes:
+        - to: default
+          via: ${GATEWAY}
+      nameservers:
+        addresses:
+          - ${DNS1}
+          - ${DNS2}
+EOF
+
+chmod 600 "$NETPLAN_FILE"
+
+echo "[+] Aplicando configuración de red..."
+
+netplan generate
+netplan apply
+
+sleep 3
+
+# ------------------------------------------------------------
+# 5. Mostrar configuración de red
+# ------------------------------------------------------------
+
+echo
+echo "===== CONFIGURACIÓN DE RED ====="
+
+ip addr show "$INTERFAZ"
+
+echo
+echo "===== TABLA DE RUTAS ====="
+
+ip route
+
+# ------------------------------------------------------------
+# 6. Actualizar paquetes
+# ------------------------------------------------------------
+
+echo
+echo "[+] Actualizando repositorios..."
+
+apt update
+
+# ------------------------------------------------------------
+# 7. Instalar OpenSSH Server
+# ------------------------------------------------------------
+
+echo
+echo "[+] Instalando OpenSSH Server..."
+
+apt install -y openssh-server
+
+systemctl enable ssh
+systemctl restart ssh
+
+# ------------------------------------------------------------
+# 8. Configurar SSH
+# ------------------------------------------------------------
+
+echo
+echo "[+] Configurando SSH..."
+
+cp /etc/ssh/sshd_config \
+   /etc/ssh/sshd_config.backup-fortigate-lab \
+   2>/dev/null || true
+
+if grep -qE '^#?PasswordAuthentication' /etc/ssh/sshd_config; then
+    sed -i \
+        's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' \
+        /etc/ssh/sshd_config
+else
+    echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+fi
+
+if grep -qE '^#?PermitRootLogin' /etc/ssh/sshd_config; then
+    sed -i \
+        's/^#\?PermitRootLogin.*/PermitRootLogin no/' \
+        /etc/ssh/sshd_config
+else
+    echo "PermitRootLogin no" >> /etc/ssh/sshd_config
+fi
+
+sshd -t
+systemctl restart ssh
+
+# ------------------------------------------------------------
+# 9. Crear usuario SSH si no existe
+# ------------------------------------------------------------
+
+if id "$USUARIO_SSH" >/dev/null 2>&1; then
+
+    echo "[+] Usuario $USUARIO_SSH ya existe."
+
+else
+
+    echo "[+] Creando usuario $USUARIO_SSH..."
+
+    adduser "$USUARIO_SSH"
+
+fi
+
+# ------------------------------------------------------------
+# 10. Instalar Apache
+# ------------------------------------------------------------
+
+echo
+echo "[+] Instalando Apache2..."
+
+apt install -y apache2 openssl
+
+systemctl enable apache2
+systemctl start apache2
+
+# ------------------------------------------------------------
+# 11. Habilitar módulo SSL
+# ------------------------------------------------------------
+
+echo
+echo "[+] Habilitando SSL en Apache..."
+
+a2enmod ssl
+
+# ------------------------------------------------------------
+# 12. Crear certificado autofirmado
+# ------------------------------------------------------------
+
+echo
+echo "[+] Generando certificado HTTPS autofirmado..."
+
+mkdir -p /etc/apache2/ssl
+
+openssl req \
+    -x509 \
+    -nodes \
+    -days 3650 \
+    -newkey rsa:2048 \
+    -keyout /etc/apache2/ssl/fortigate-lab.key \
+    -out /etc/apache2/ssl/fortigate-lab.crt \
+    -subj "/C=DO/ST=Lab/L=GNS3/O=Infraestructura3/OU=VPN/CN=10.21.40.130"
+
+chmod 600 /etc/apache2/ssl/fortigate-lab.key
+chmod 644 /etc/apache2/ssl/fortigate-lab.crt
+
+# ------------------------------------------------------------
+# 13. Crear página web del laboratorio
+# ------------------------------------------------------------
+
+echo
+echo "[+] Creando página web..."
+
+cat > /var/www/html/index.html <<'EOF'
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Servidor Ubuntu - VPN FortiGate</title>
+</head>
+<body>
+    <h1>Laboratorio VPN IPsec FortiGate</h1>
+    <p>Servidor Ubuntu Server 24.04</p>
+    <p>IP: 10.21.40.130</p>
+    <p>HTTPS: TCP/443</p>
+    <p>SSH: TCP/22 mediante VPN IPsec</p>
+</body>
+</html>
+EOF
+
+# ------------------------------------------------------------
+# 14. Configurar VirtualHost HTTPS
+# ------------------------------------------------------------
+
+echo
+echo "[+] Configurando Apache HTTPS..."
+
+cat > /etc/apache2/sites-available/fortigate-lab-ssl.conf <<EOF
+<VirtualHost *:443>
+
+    ServerAdmin admin@localhost
+    ServerName ${IP_SERVIDOR}
+    DocumentRoot /var/www/html
+
+    SSLEngine on
+    SSLCertificateFile /etc/apache2/ssl/fortigate-lab.crt
+    SSLCertificateKeyFile /etc/apache2/ssl/fortigate-lab.key
+
+    <Directory /var/www/html>
+        Options Indexes FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/fortigate-lab-error.log
+    CustomLog \${APACHE_LOG_DIR}/fortigate-lab-access.log combined
+
+</VirtualHost>
+EOF
+
+a2ensite fortigate-lab-ssl.conf
+
+apache2ctl configtest
+
+systemctl restart apache2
+
+# ------------------------------------------------------------
+# 15. Firewall local de Ubuntu
+# ------------------------------------------------------------
+
+echo
+echo "[+] Configurando UFW..."
+
+apt install -y ufw
+
+ufw allow 22/tcp
+ufw allow 443/tcp
+ufw --force enable
+
+# ------------------------------------------------------------
+# 16. Validar servicios
+# ------------------------------------------------------------
+
+echo
+echo "=============================================="
+echo " VALIDACIÓN"
+echo "=============================================="
+
+echo
+echo "Dirección IP:"
+ip -4 addr show "$INTERFAZ"
+
+echo
+echo "Ruta por defecto:"
+ip route | grep default || true
+
+echo
+echo "Servicio SSH:"
+systemctl --no-pager --full status ssh | head -15 || true
+
+echo
+echo "Servicio Apache:"
+systemctl --no-pager --full status apache2 | head -15 || true
+
+echo
+echo "Puertos en escucha:"
+ss -tulpn | grep -E ':22|:443' || true
+
+echo
+echo "Prueba HTTPS local:"
+curl -k -I "https://${IP_SERVIDOR}" || true
+
+echo
+echo "Prueba gateway:"
+ping -c 4 "$GATEWAY" || true
+
+echo
+echo "=============================================="
+echo " CONFIGURACIÓN COMPLETADA"
+echo "=============================================="
+
+echo
+echo "Servidor:"
+echo "  IP:       ${IP_SERVIDOR}/${PREFIJO}"
+echo "  Gateway:  ${GATEWAY}"
+echo "  Interfaz: ${INTERFAZ}"
+echo
+echo "Servicios:"
+echo "  HTTPS: https://${IP_SERVIDOR}"
+echo "  SSH:   ssh ${USUARIO_SSH}@${IP_SERVIDOR}"
+echo
+echo "IMPORTANTE:"
+echo "El bloqueo de SSH sin VPN se realiza en el FortiGate,"
+echo "no en el firewall local del servidor."
