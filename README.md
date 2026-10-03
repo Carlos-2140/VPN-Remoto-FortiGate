@@ -1,6 +1,6 @@
 # VPN Remoto con FortiGate
 
-> **Video demostrativo:** [[Agregar enlace del video aquí](https://www.youtube.com/watch?v=_zxU_fG3OD4)](#)
+> **Video demostrativo:** (https://www.youtube.com/watch?v=_zxU_fG3OD4)
 
 Laboratorio de **VPN IPsec de acceso remoto con FortiGate en GNS3**, diseñado para demostrar segmentación de red, control de acceso y acceso remoto seguro a un servidor Ubuntu.
 
