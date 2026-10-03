@@ -61,6 +61,6 @@ El objetivo principal es permitir acceso **HTTPS** al servidor sin necesidad de 
 
 La tabla ampliada de direccionamiento está disponible en:
 
-- [docs/Direccionamiento_IP.md](docs/Direccionamiento_IP.md)
+- [Direccionamiento/Direccionamiento_IP.md](Direccionamiento/Direccionamiento_IP.md)
 
 > **Nota de seguridad:** no se publican contraseñas, claves precompartidas (PSK) ni otros secretos en este repositorio.
