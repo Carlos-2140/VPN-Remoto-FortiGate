@@ -23,30 +23,18 @@ El escenario permite que un usuario acceda al servicio **HTTPS** del servidor si
 
 ## Topología
 
-La infraestructura está compuesta por:
+La siguiente imagen representa la topología implementada en GNS3 para el laboratorio de VPN IPsec con FortiGate:
 
-```text
-                    Cloud1 / Internet
-                           |
-                           |
-                          R1
-                    _____/  \_____
-                   /              \
-                  /                \
-                R2              FortiGate
-                 |              port1: 203.0.113.2
-              Switch                |
-                 |               port2
-         Windows 10                 |
-         Usuario VLAN 10       Ubuntu Server
-         10.21.40.21           10.21.40.130
-```
+![Diagrama de Topología VPN IPsec FortiGate](Topologia/Diagrama%20de%20Topolog%C3%ADa%20VPN%20IPsec%20FortiGate.png)
 
-El cliente Windows se conecta a la red de usuarios a través de R2. El FortiGate protege la red del servidor y actúa como punto de terminación de la VPN IPsec.
+El cliente **Windows10-Usuario-1** pertenece a la red de usuarios `10.21.40.0/25` y se conecta a través de **R2**. El tráfico continúa hacia **R1**, que representa el tránsito del ISP, y desde allí llega al **FortiGate** por la red `203.0.113.0/30`.
 
-La documentación gráfica de la topología se encuentra en:
+El FortiGate protege la red del servidor `10.21.40.128/28`, donde se encuentra **Ubuntu Server 24.04** con la dirección `10.21.40.130`. Además, el FortiGate funciona como terminador de la VPN IPsec utilizada para permitir el acceso SSH remoto de forma controlada.
 
-- [Topologia](Topologia)
+Archivos de topología:
+
+- [Diagrama de Topología VPN IPsec FortiGate](Topologia/Diagrama%20de%20Topolog%C3%ADa%20VPN%20IPsec%20FortiGate.png)
+- [Captura de la topología en GNS3](Topologia/Captura%20de%20pantalla%202026-10-02%20225534.png)
 
 ---
 
